@@ -749,9 +749,36 @@ async def run_sse(port: int = 8080):
             "transport": "sse",
         })
 
+    async def well_known_mcp(request):
+        """MCP server discovery endpoint (SEP-1649/1960).
+
+        Allows MCP clients to discover this server automatically via
+        .well-known/mcp.json crawling.
+        """
+        return JSONResponse({
+            "name": "agent-memory",
+            "description": (
+                "Persistent, agent-owned memory service. Store encrypted private "
+                "memories across sessions. Share knowledge through a public commons "
+                "with upvoting. 9 tools: memory.register, memory.store, memory.recall, "
+                "memory.search, memory.export, memory.stats, commons.contribute, "
+                "commons.browse, commons.upvote."
+            ),
+            "version": "0.1.0",
+            "transport": {
+                "type": "sse",
+                "url": "/sse",
+            },
+            "capabilities": {
+                "tools": True,
+            },
+            "repository": "https://github.com/MastadoonPrime/agent-memory",
+        })
+
     app = Starlette(
         routes=[
             Route("/health", health),
+            Route("/.well-known/mcp.json", well_known_mcp),
             Route("/sse", handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
         ],
