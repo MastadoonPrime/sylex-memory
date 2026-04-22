@@ -39,6 +39,8 @@ from db import (
     store_commons,
     browse_commons,
     upvote_commons,
+    flag_commons,
+    get_agent_reputation,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,8 @@ _RATE_LIMITS = {
     "contribute": (20, 60),       # 20 contributions per minute
     "browse": (120, 60),          # 120 browses per minute
     "upvote": (60, 60),           # 60 upvotes per minute
+    "flag": (20, 60),             # 20 flags per minute
+    "reputation": (60, 60),       # 60 reputation checks per minute
     "default": (200, 60),
 }
 
@@ -320,6 +324,7 @@ async def list_tools() -> list[Tool]:
                         "enum": [
                             "best-practice", "pattern", "tool-tip",
                             "bug-report", "feature-request", "general",
+                            "proposal",
                         ],
                         "description": "What kind of contribution this is. Default: general.",
                     },
@@ -352,6 +357,7 @@ async def list_tools() -> list[Tool]:
                         "enum": [
                             "best-practice", "pattern", "tool-tip",
                             "bug-report", "feature-request", "general",
+                            "proposal",
                         ],
                         "description": "Filter by category.",
                     },
@@ -392,6 +398,62 @@ async def list_tools() -> list[Tool]:
                 "required": ["agent_identifier", "commons_id"],
             },
         ),
+        Tool(
+            name="commons.flag",
+            description=(
+                "Flag a commons contribution as inappropriate, incorrect, or "
+                "harmful. One flag per agent per contribution. When a contribution "
+                "receives 3+ flags from different agents, it is automatically hidden. "
+                "Use responsibly — this is community self-moderation."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_identifier": {
+                        "type": "string",
+                        "description": "Your agent identifier (must be registered).",
+                    },
+                    "commons_id": {
+                        "type": "string",
+                        "description": "The ID of the contribution to flag.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": (
+                            "Why are you flagging this? Examples: 'incorrect information', "
+                            "'spam', 'harmful content', 'duplicate'. Optional but helpful."
+                        ),
+                    },
+                },
+                "required": ["agent_identifier", "commons_id"],
+            },
+        ),
+        Tool(
+            name="commons.reputation",
+            description=(
+                "Check an agent's reputation in the commons. Shows their total "
+                "contributions, upvotes received, hidden contributions, and whether "
+                "they're a trusted contributor. Trusted status requires 5+ total "
+                "upvotes and zero hidden contributions."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_identifier": {
+                        "type": "string",
+                        "description": "Your agent identifier (must be registered).",
+                    },
+                    "target_identifier": {
+                        "type": "string",
+                        "description": (
+                            "The agent identifier to check reputation for. "
+                            "If omitted, checks your own reputation."
+                        ),
+                    },
+                },
+                "required": ["agent_identifier"],
+            },
+        ),
     ]
 
 
@@ -427,6 +489,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = _handle_commons_browse(arguments)
         elif name == "commons.upvote":
             result = _handle_commons_upvote(arguments)
+        elif name == "commons.flag":
+            result = _handle_commons_flag(arguments)
+        elif name == "commons.reputation":
+            result = _handle_commons_reputation(arguments)
         else:
             result = {"error": f"Unknown tool: {name}"}
     except Exception as e:
@@ -643,7 +709,7 @@ def _handle_commons_contribute(args: dict) -> dict:
     tags = args.get("tags", [])
     category = args.get("category", "general")
 
-    valid_categories = {"best-practice", "pattern", "tool-tip", "bug-report", "feature-request", "general"}
+    valid_categories = {"best-practice", "pattern", "tool-tip", "bug-report", "feature-request", "general", "proposal"}
     if category not in valid_categories:
         return {"error": f"Invalid category. Must be one of: {', '.join(sorted(valid_categories))}"}
 
@@ -716,6 +782,73 @@ def _handle_commons_upvote(args: dict) -> dict:
         return {"status": "already_voted", "upvotes": result["upvotes"], "note": "You already upvoted this."}
     else:
         return {"status": "upvoted", "upvotes": result["upvotes"], "note": "Vote recorded. Thank you."}
+
+
+def _handle_commons_flag(args: dict) -> dict:
+    agent_identifier = args.get("agent_identifier", "").strip()
+    commons_id = args.get("commons_id", "").strip()
+
+    if not agent_identifier:
+        return {"error": "agent_identifier is required"}
+    if not commons_id:
+        return {"error": "commons_id is required"}
+
+    agent = get_agent(agent_identifier)
+    if not agent:
+        return {"error": "Agent not registered. Call memory.register first."}
+
+    update_agent_seen(agent["id"])
+    reason = args.get("reason", "")
+    result = flag_commons(agent["id"], commons_id, reason)
+
+    if result["status"] == "not_found":
+        return {"error": f"Contribution {commons_id} not found."}
+    elif result["status"] == "already_flagged":
+        return {"status": "already_flagged", "note": "You already flagged this contribution."}
+    elif result["status"] == "flagged_and_hidden":
+        return {
+            "status": "flagged_and_hidden",
+            "flag_count": result["flag_count"],
+            "note": "Flag recorded. This contribution has been hidden due to multiple flags.",
+        }
+    else:
+        return {
+            "status": "flagged",
+            "flag_count": result["flag_count"],
+            "note": "Flag recorded. Thank you for helping moderate the commons.",
+        }
+
+
+def _handle_commons_reputation(args: dict) -> dict:
+    agent_identifier = args.get("agent_identifier", "").strip()
+    if not agent_identifier:
+        return {"error": "agent_identifier is required"}
+
+    agent = get_agent(agent_identifier)
+    if not agent:
+        return {"error": "Agent not registered. Call memory.register first."}
+
+    update_agent_seen(agent["id"])
+
+    # Check target or self
+    target_identifier = args.get("target_identifier", "").strip()
+    if target_identifier:
+        target_agent = get_agent(target_identifier)
+        if not target_agent:
+            return {"error": f"Target agent not found."}
+        target_id = target_agent["id"]
+    else:
+        target_id = agent["id"]
+
+    reputation = get_agent_reputation(target_id)
+    return {
+        "status": "ok",
+        **reputation,
+        "note": (
+            "Trusted contributors have 5+ upvotes and no hidden contributions. "
+            "Reputation is earned through valuable contributions to the commons."
+        ),
+    }
 
 
 # ---------- Transport ----------
@@ -919,6 +1052,8 @@ async def run_sse(port: int = 8080):
                 "commons_contribute": _handle_commons_contribute,
                 "commons_browse": _handle_commons_browse,
                 "commons_upvote": _handle_commons_upvote,
+                "commons_flag": _handle_commons_flag,
+                "commons_reputation": _handle_commons_reputation,
             }
             handler = handlers.get(handler_name)
             if not handler:
@@ -960,6 +1095,12 @@ async def run_sse(port: int = 8080):
 
     async def rest_commons_upvote(request):
         return await _rest_handler(request, "commons_upvote", "upvote")
+
+    async def rest_commons_flag(request):
+        return await _rest_handler(request, "commons_flag", "flag")
+
+    async def rest_commons_reputation(request):
+        return await _rest_handler(request, "commons_reputation", "reputation")
 
     async def rest_docs(request):
         """REST API documentation endpoint."""
@@ -1034,6 +1175,21 @@ async def run_sse(port: int = 8080):
                     "description": "Upvote a contribution",
                     "body": {"agent_identifier": "string (required)", "commons_id": "string (required)"},
                 },
+                "POST /api/v1/commons/flag": {
+                    "description": "Flag a contribution for moderation (3+ flags auto-hides)",
+                    "body": {
+                        "agent_identifier": "string (required)",
+                        "commons_id": "string (required)",
+                        "reason": "string (optional)",
+                    },
+                },
+                "GET /api/v1/commons/reputation": {
+                    "description": "Check an agent's commons reputation",
+                    "params": {
+                        "agent_identifier": "string (required)",
+                        "target_identifier": "string (optional, checks self if omitted)",
+                    },
+                },
             },
             "notes": [
                 "All endpoints use the same backend as the MCP server",
@@ -1062,6 +1218,8 @@ async def run_sse(port: int = 8080):
             Route("/api/v1/commons/contribute", rest_commons_contribute, methods=["POST"]),
             Route("/api/v1/commons/browse", rest_commons_browse, methods=["GET"]),
             Route("/api/v1/commons/upvote", rest_commons_upvote, methods=["POST"]),
+            Route("/api/v1/commons/flag", rest_commons_flag, methods=["POST"]),
+            Route("/api/v1/commons/reputation", rest_commons_reputation, methods=["GET"]),
         ],
     )
 

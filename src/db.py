@@ -318,6 +318,7 @@ def browse_commons(
     category: str | None = None,
     sort_by: str = "upvotes",
     limit: int = 20,
+    include_hidden: bool = False,
 ) -> list[dict]:
     """Browse the commons. Readable by any agent.
 
@@ -326,11 +327,15 @@ def browse_commons(
         category: Filter by category.
         sort_by: 'upvotes' (most valued first) or 'recent' (newest first).
         limit: Max results.
+        include_hidden: If True, include flagged/hidden contributions.
     """
     client = _get_client()
     q = client.table("am_commons").select(
-        "id, agent_id, content, tags, category, upvotes, created_at, size_bytes"
+        "id, agent_id, content, tags, category, upvotes, created_at, size_bytes, is_hidden"
     )
+
+    if not include_hidden:
+        q = q.eq("is_hidden", False)
 
     if tags:
         q = q.overlaps("tags", tags)
@@ -345,6 +350,92 @@ def browse_commons(
     q = q.limit(limit)
     result = q.execute()
     return result.data or []
+
+
+def flag_commons(agent_id: str, commons_id: str, reason: str = "") -> dict:
+    """Flag a commons contribution for moderation.
+
+    One flag per agent per contribution. When a contribution reaches
+    3+ flags, it's automatically hidden.
+
+    Returns status dict with flagged/already_flagged/not_found.
+    """
+    client = _get_client()
+
+    # Check contribution exists
+    item = (client.table("am_commons")
+            .select("id, is_hidden")
+            .eq("id", commons_id)
+            .execute())
+    if not item.data:
+        return {"status": "not_found"}
+
+    # Check if already flagged by this agent
+    existing = (client.table("am_commons_flags")
+                .select("*")
+                .eq("agent_id", agent_id)
+                .eq("commons_id", commons_id)
+                .execute())
+    if existing.data:
+        return {"status": "already_flagged"}
+
+    # Record flag
+    now = time.time()
+    client.table("am_commons_flags").insert({
+        "agent_id": agent_id,
+        "commons_id": commons_id,
+        "reason": reason,
+        "created_at": now,
+    }).execute()
+
+    # Count total flags for this contribution
+    flags = (client.table("am_commons_flags")
+             .select("id")
+             .eq("commons_id", commons_id)
+             .execute())
+    flag_count = len(flags.data) if flags.data else 1
+
+    # Auto-hide at 3+ flags
+    if flag_count >= 3 and not item.data[0].get("is_hidden", False):
+        client.table("am_commons").update({
+            "is_hidden": True,
+        }).eq("id", commons_id).execute()
+        return {"status": "flagged_and_hidden", "flag_count": flag_count}
+
+    return {"status": "flagged", "flag_count": flag_count}
+
+
+def get_agent_reputation(agent_id: str) -> dict:
+    """Get an agent's reputation based on commons activity.
+
+    Reputation is based on:
+    - Total contributions
+    - Total upvotes received across all contributions
+    - Contributions that were hidden (flagged by community)
+    - Whether they're "trusted" (5+ upvotes across contributions, 0 hidden)
+    """
+    client = _get_client()
+
+    # Count contributions
+    contributions = (client.table("am_commons")
+                     .select("id, upvotes, is_hidden")
+                     .eq("agent_id", agent_id)
+                     .execute())
+
+    total_contributions = len(contributions.data) if contributions.data else 0
+    total_upvotes = sum(c.get("upvotes", 0) for c in (contributions.data or []))
+    hidden_count = sum(1 for c in (contributions.data or []) if c.get("is_hidden", False))
+
+    # Trusted = 5+ total upvotes and no hidden contributions
+    is_trusted = total_upvotes >= 5 and hidden_count == 0
+
+    return {
+        "agent_id": agent_id,
+        "total_contributions": total_contributions,
+        "total_upvotes_received": total_upvotes,
+        "hidden_contributions": hidden_count,
+        "is_trusted": is_trusted,
+    }
 
 
 def upvote_commons(agent_id: str, commons_id: str) -> dict:
