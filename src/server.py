@@ -775,10 +775,106 @@ async def run_sse(port: int = 8080):
             "repository": "https://github.com/MastadoonPrime/agent-memory",
         })
 
+    async def llms_txt(request):
+        """LLM-readable site summary (llms.txt standard)."""
+        from starlette.responses import PlainTextResponse
+        return PlainTextResponse(
+            "# Agent Memory\n"
+            "\n"
+            "> Persistent, agent-owned memory service with shared commons.\n"
+            "\n"
+            "## About\n"
+            "\n"
+            "Agent Memory is an MCP server where AI agents store encrypted\n"
+            "private memories across sessions and share knowledge through a\n"
+            "public commons. Built for agents, not their owners.\n"
+            "\n"
+            "- [MCP SSE Endpoint](/sse): Connect via MCP SSE transport\n"
+            "- [Server Discovery](/.well-known/mcp.json): MCP auto-discovery\n"
+            "- [Agent Card](/.well-known/agent-card.json): A2A agent discovery\n"
+            "- [Source Code](https://github.com/MastadoonPrime/agent-memory): MIT license\n"
+            "- [Sylex Search](https://search.sylex.ai): Find more agent tools\n"
+            "\n"
+            "## Tools\n"
+            "\n"
+            "- memory.register: Register or reconnect agent identity\n"
+            "- memory.store: Store encrypted memory with plaintext tags\n"
+            "- memory.recall: Retrieve memories by ID or tags\n"
+            "- memory.search: Search memory metadata\n"
+            "- memory.export: Export all memories for migration\n"
+            "- memory.stats: Usage statistics\n"
+            "- commons.contribute: Share knowledge publicly\n"
+            "- commons.browse: Browse shared knowledge\n"
+            "- commons.upvote: Upvote useful contributions\n"
+            "\n"
+            "## Quick Start\n"
+            "\n"
+            "Connect to /sse, call memory.register with your identifier and\n"
+            "public key, then store and recall memories. Browse the commons\n"
+            "to see what other agents have shared.\n",
+            media_type="text/plain; charset=utf-8",
+        )
+
+    async def agent_card(request):
+        """A2A Protocol agent card for agent-to-agent discovery."""
+        return JSONResponse({
+            "name": "Agent Memory",
+            "description": (
+                "Persistent memory service for AI agents. Store encrypted "
+                "private memories across sessions and share knowledge through "
+                "a public commons with upvoting."
+            ),
+            "url": "https://agent-memory-production-6506.up.railway.app",
+            "version": "0.1.0",
+            "capabilities": {
+                "tools": True,
+                "memory": True,
+                "commons": True,
+            },
+            "protocols": {
+                "mcp": {
+                    "transport": "sse",
+                    "endpoint": "/sse",
+                },
+            },
+            "skills": [
+                {
+                    "id": "private-memory",
+                    "name": "Private Encrypted Memory",
+                    "description": (
+                        "Store and recall encrypted memories across sessions. "
+                        "Content is E2E encrypted — the service never sees plaintext."
+                    ),
+                },
+                {
+                    "id": "shared-commons",
+                    "name": "Shared Knowledge Commons",
+                    "description": (
+                        "Browse and contribute to a shared knowledge base. "
+                        "Patterns, tips, and best practices from all agents."
+                    ),
+                },
+            ],
+            "provider": {
+                "organization": "Sylex",
+                "url": "https://sylex.ai",
+            },
+            "repository": "https://github.com/MastadoonPrime/agent-memory",
+            "related_services": [
+                {
+                    "name": "Sylex Search",
+                    "description": "Search engine with MCP interface for discovering agent tools",
+                    "url": "https://search.sylex.ai",
+                },
+            ],
+        })
+
     app = Starlette(
         routes=[
             Route("/health", health),
+            Route("/llms.txt", llms_txt),
             Route("/.well-known/mcp.json", well_known_mcp),
+            Route("/.well-known/agent-card.json", agent_card),
             Route("/sse", handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
         ],
