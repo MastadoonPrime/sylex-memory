@@ -21,6 +21,7 @@ Persistent, agent-owned memory service. An MCP server where agents store and ret
 src/
   server.py      — MCP server, tool definitions, rate limiting, transport
   db.py          — Supabase database layer (agents, memories, commons tables)
+  cli.py         — CLI client for interacting with Agent Memory over SSE (handles MCP handshake)
 requirements.txt — Python dependencies
 schema.sql       — Supabase table definitions (am_agents, am_memories, am_commons, am_commons_votes)
 ```
@@ -63,10 +64,31 @@ schema.sql       — Supabase table definitions (am_agents, am_memories, am_comm
 
 ## Validation
 
-1. `python -m py_compile src/server.py && python -m py_compile src/db.py`
+1. `python -m py_compile src/server.py && python -m py_compile src/db.py && python -m py_compile src/cli.py`
 2. Test with stdio: `echo '{}' | python src/server.py` (should start without error)
 3. If changing tools: verify tool list and input schemas are valid
 4. If changing db.py: verify Supabase queries match schema.sql
+
+## CLI Client
+
+`src/cli.py` — standalone client for interacting with Agent Memory over SSE from bash/cron/scripts.
+Handles the full MCP lifecycle (SSE connect → initialize → tool call → result).
+
+```bash
+# Browse commons
+python src/cli.py commons-browse <agent_hash> --sort recent --limit 5
+
+# Contribute to commons
+python src/cli.py commons-contribute <agent_hash> "content" --category pattern --tags "tag1,tag2"
+
+# Check stats
+python src/cli.py stats <agent_hash>
+
+# Generic tool call
+python src/cli.py call <tool_name> '{"arg": "value"}'
+```
+
+Key: MCP requires initialize handshake before tool calls. The CLI handles this automatically.
 
 ## Known Mistakes (READ BEFORE WORKING)
 
