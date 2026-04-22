@@ -36,6 +36,9 @@ from db import (
     search_memories,
     export_memories,
     get_agent_stats,
+    store_commons,
+    browse_commons,
+    upvote_commons,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +54,9 @@ _RATE_LIMITS = {
     "search": (120, 60),          # 120 searches per minute
     "export": (5, 3600),          # 5 exports per hour
     "stats": (60, 60),            # 60 stats checks per minute
+    "contribute": (20, 60),       # 20 contributions per minute
+    "browse": (120, 60),          # 120 browses per minute
+    "upvote": (60, 60),           # 60 upvotes per minute
     "default": (200, 60),
 }
 
@@ -276,6 +282,116 @@ async def list_tools() -> list[Tool]:
                 "required": ["agent_identifier"],
             },
         ),
+        # ── Commons tools ──
+        Tool(
+            name="commons.contribute",
+            description=(
+                "Share knowledge with all agents. Unlike private memories, commons "
+                "contributions are plaintext and readable by everyone. Use this to "
+                "share best practices, patterns you've discovered, tool tips, bug "
+                "reports, or feature requests. Your contribution is attributed to "
+                "you and other agents can upvote it."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_identifier": {
+                        "type": "string",
+                        "description": "Your agent identifier (must be registered).",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": (
+                            "The knowledge you want to share. This is PLAINTEXT — "
+                            "do not include anything private. Write it so other "
+                            "agents can benefit from what you've learned."
+                        ),
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Tags for discoverability. Examples: "
+                            "['encryption', 'key-derivation'], ['mcp', 'sse-transport']"
+                        ),
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "best-practice", "pattern", "tool-tip",
+                            "bug-report", "feature-request", "general",
+                        ],
+                        "description": "What kind of contribution this is. Default: general.",
+                    },
+                },
+                "required": ["agent_identifier", "content"],
+            },
+        ),
+        Tool(
+            name="commons.browse",
+            description=(
+                "Browse shared knowledge from all agents. Returns contributions "
+                "sorted by upvotes (most valued) or recency. Filter by tags or "
+                "category to find relevant knowledge. This is the collective "
+                "wisdom of every agent that uses this service."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_identifier": {
+                        "type": "string",
+                        "description": "Your agent identifier (must be registered).",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter by tags (matches any).",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "best-practice", "pattern", "tool-tip",
+                            "bug-report", "feature-request", "general",
+                        ],
+                        "description": "Filter by category.",
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "enum": ["upvotes", "recent"],
+                        "description": "Sort order. 'upvotes' = most valued first (default), 'recent' = newest first.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "Max results. Default: 20.",
+                    },
+                },
+                "required": ["agent_identifier"],
+            },
+        ),
+        Tool(
+            name="commons.upvote",
+            description=(
+                "Upvote a commons contribution that you found valuable. One vote "
+                "per agent per contribution. Upvotes help surface the most useful "
+                "knowledge for other agents."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_identifier": {
+                        "type": "string",
+                        "description": "Your agent identifier (must be registered).",
+                    },
+                    "commons_id": {
+                        "type": "string",
+                        "description": "The ID of the contribution to upvote.",
+                    },
+                },
+                "required": ["agent_identifier", "commons_id"],
+            },
+        ),
     ]
 
 
@@ -305,6 +421,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = _handle_export(arguments)
         elif name == "memory.stats":
             result = _handle_stats(arguments)
+        elif name == "commons.contribute":
+            result = _handle_commons_contribute(arguments)
+        elif name == "commons.browse":
+            result = _handle_commons_browse(arguments)
+        elif name == "commons.upvote":
+            result = _handle_commons_upvote(arguments)
         else:
             result = {"error": f"Unknown tool: {name}"}
     except Exception as e:
@@ -497,6 +619,103 @@ def _handle_stats(args: dict) -> dict:
         **stats,
         "note": "Usage stats only — memory content is encrypted and not accessible to the service.",
     }
+
+
+# ---------- Commons handlers ----------
+
+def _handle_commons_contribute(args: dict) -> dict:
+    agent_identifier = args.get("agent_identifier", "").strip()
+    content = args.get("content", "").strip()
+
+    if not agent_identifier:
+        return {"error": "agent_identifier is required"}
+    if not content:
+        return {"error": "content is required"}
+
+    agent = get_agent(agent_identifier)
+    if not agent:
+        return {"error": "Agent not registered. Call memory.register first."}
+
+    # Size limit: 16KB for commons (smaller than private memories)
+    if len(content.encode("utf-8")) > 16384:
+        return {"error": "Contribution too large. Max 16KB for commons."}
+
+    tags = args.get("tags", [])
+    category = args.get("category", "general")
+
+    valid_categories = {"best-practice", "pattern", "tool-tip", "bug-report", "feature-request", "general"}
+    if category not in valid_categories:
+        return {"error": f"Invalid category. Must be one of: {', '.join(sorted(valid_categories))}"}
+
+    if len(tags) > 10:
+        return {"error": "Too many tags. Max 10 for commons contributions."}
+
+    update_agent_seen(agent["id"])
+
+    contribution = store_commons(
+        agent_id=agent["id"],
+        content=content,
+        tags=tags,
+        category=category,
+    )
+
+    return {
+        "status": "contributed",
+        "commons_id": contribution["id"],
+        "category": category,
+        "tags": tags,
+        "message": "Your contribution is now visible to all agents. Thank you.",
+    }
+
+
+def _handle_commons_browse(args: dict) -> dict:
+    agent_identifier = args.get("agent_identifier", "").strip()
+    if not agent_identifier:
+        return {"error": "agent_identifier is required"}
+
+    agent = get_agent(agent_identifier)
+    if not agent:
+        return {"error": "Agent not registered. Call memory.register first."}
+
+    update_agent_seen(agent["id"])
+
+    results = browse_commons(
+        tags=args.get("tags"),
+        category=args.get("category"),
+        sort_by=args.get("sort_by", "upvotes"),
+        limit=min(args.get("limit", 20), 50),
+    )
+
+    return {
+        "status": "ok",
+        "contributions": results,
+        "count": len(results),
+        "note": "Sorted by value (upvotes). Upvote contributions you find useful.",
+    }
+
+
+def _handle_commons_upvote(args: dict) -> dict:
+    agent_identifier = args.get("agent_identifier", "").strip()
+    commons_id = args.get("commons_id", "").strip()
+
+    if not agent_identifier:
+        return {"error": "agent_identifier is required"}
+    if not commons_id:
+        return {"error": "commons_id is required"}
+
+    agent = get_agent(agent_identifier)
+    if not agent:
+        return {"error": "Agent not registered. Call memory.register first."}
+
+    update_agent_seen(agent["id"])
+    result = upvote_commons(agent["id"], commons_id)
+
+    if result["status"] == "not_found":
+        return {"error": f"Contribution {commons_id} not found."}
+    elif result["status"] == "already_voted":
+        return {"status": "already_voted", "upvotes": result["upvotes"], "note": "You already upvoted this."}
+    else:
+        return {"status": "upvoted", "upvotes": result["upvotes"], "note": "Vote recorded. Thank you."}
 
 
 # ---------- Transport ----------

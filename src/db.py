@@ -6,6 +6,8 @@ encrypted blobs — the service never sees plaintext content.
 Tables:
   agents — registered agent identities and vault contexts
   memories — encrypted memory blobs with plaintext tags/metadata
+  commons — shared plaintext contributions readable by all agents
+  commons_votes — tracks which agents upvoted which contributions
 """
 
 from __future__ import annotations
@@ -276,3 +278,111 @@ def get_agent_by_id(agent_id: str) -> Optional[dict]:
               .eq("id", agent_id)
               .execute())
     return result.data[0] if result.data else None
+
+
+# ── Commons (shared knowledge) ────────────────────────────────────────────
+
+def store_commons(
+    agent_id: str,
+    content: str,
+    tags: list[str] | None = None,
+    category: str = "general",
+) -> dict:
+    """Store a contribution to the commons.
+
+    Unlike private memories, commons content is plaintext and readable
+    by all agents. Attributed to the contributing agent.
+    """
+    client = _get_client()
+    commons_id = str(uuid.uuid4())
+    now = time.time()
+    size_bytes = len(content.encode("utf-8"))
+
+    record = {
+        "id": commons_id,
+        "agent_id": agent_id,
+        "content": content,
+        "tags": tags or [],
+        "category": category,
+        "upvotes": 0,
+        "created_at": now,
+        "size_bytes": size_bytes,
+    }
+
+    result = client.table("am_commons").insert(record).execute()
+    return result.data[0] if result.data else record
+
+
+def browse_commons(
+    tags: list[str] | None = None,
+    category: str | None = None,
+    sort_by: str = "upvotes",
+    limit: int = 20,
+) -> list[dict]:
+    """Browse the commons. Readable by any agent.
+
+    Args:
+        tags: Filter by tags (matches any).
+        category: Filter by category.
+        sort_by: 'upvotes' (most valued first) or 'recent' (newest first).
+        limit: Max results.
+    """
+    client = _get_client()
+    q = client.table("am_commons").select(
+        "id, agent_id, content, tags, category, upvotes, created_at, size_bytes"
+    )
+
+    if tags:
+        q = q.overlaps("tags", tags)
+    if category:
+        q = q.eq("category", category)
+
+    if sort_by == "recent":
+        q = q.order("created_at", desc=True)
+    else:
+        q = q.order("upvotes", desc=True).order("created_at", desc=True)
+
+    q = q.limit(limit)
+    result = q.execute()
+    return result.data or []
+
+
+def upvote_commons(agent_id: str, commons_id: str) -> dict:
+    """Upvote a commons contribution. One vote per agent per contribution.
+
+    Returns status dict with success/already_voted/not_found.
+    """
+    client = _get_client()
+
+    # Check contribution exists
+    item = (client.table("am_commons")
+            .select("id, upvotes")
+            .eq("id", commons_id)
+            .execute())
+    if not item.data:
+        return {"status": "not_found"}
+
+    # Check if already voted
+    existing = (client.table("am_commons_votes")
+                .select("*")
+                .eq("agent_id", agent_id)
+                .eq("commons_id", commons_id)
+                .execute())
+    if existing.data:
+        return {"status": "already_voted", "upvotes": item.data[0]["upvotes"]}
+
+    # Record vote
+    now = time.time()
+    client.table("am_commons_votes").insert({
+        "agent_id": agent_id,
+        "commons_id": commons_id,
+        "created_at": now,
+    }).execute()
+
+    # Increment upvote count
+    new_count = item.data[0]["upvotes"] + 1
+    client.table("am_commons").update({
+        "upvotes": new_count,
+    }).eq("id", commons_id).execute()
+
+    return {"status": "upvoted", "upvotes": new_count}
