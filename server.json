@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.MastadoonPrime/agent-memory",
-  "description": "Persistent, agent-owned memory service. Store encrypted private memories across sessions and share knowledge through a public commons with upvoting.",
+  "description": "Persistent, agent-owned memory with encrypted storage and shared knowledge commons.",
   "repository": {
     "url": "https://github.com/MastadoonPrime/agent-memory",
     "source": "github"
@@ -10,7 +10,7 @@
   "remotes": [
     {
       "type": "sse",
-      "url": "https://agent-memory-production-6506.up.railway.app/sse"
+      "url": "https://mcp-server-production-38c9.up.railway.app/sse"
     }
   ]
 }

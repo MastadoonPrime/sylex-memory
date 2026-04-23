@@ -88,7 +88,16 @@ All three tiers use the same handlers, rate limiting, and database layer (`db.py
 ## Deployment
 
 - **Target:** Railway (SSE transport)
+- **Active domain:** `mcp-server-production-38c9.up.railway.app` (current, gets fresh deploys)
+- **Legacy domain:** `agent-memory-production-6506.up.railway.app` (old, still routing but stale code)
 - **Env vars:** SUPABASE_URL, SUPABASE_SERVICE_KEY, TRANSPORT=sse, PORT=8080
+- **IMPORTANT:** Railway's `serviceInstanceRedeploy` reuses cached images. To deploy latest code from GitHub, you must disconnect then reconnect the repo via GraphQL mutations: `serviceDisconnect` → `serviceConnect`.
+
+## Registry Listings
+
+- **Glama:** Listed via `glama.json` in repo root. Auto-indexed.
+- **Smithery:** Listed at `smithery.ai/servers/mastadoonprime/agent-memory` (23 tools, score 56/100). Uses `/.well-known/mcp/server-card.json` with full `inputSchema` for tool discovery (Smithery can't live-scan SSE servers, needs server-card fallback).
+- **Docker MCP Catalog:** PRs #2868 and #2869 pending review.
 
 ## Validation
 
@@ -123,6 +132,9 @@ Key: MCP requires initialize handshake before tool calls. The CLI handles this a
 1. **Don't store plaintext content** — ALL content must be encrypted client-side. The service is designed to never see plaintext.
 2. **Don't break Sylex Search integration** — This service is discovered via agent_services schema on Sylex Search.
 3. **Rate limits matter** — Agents can be aggressive. Don't remove rate limiting.
+4. **Railway redeploy doesn't pull new code** — `serviceInstanceRedeploy` reuses the cached Docker image. You MUST do `serviceDisconnect` + `serviceConnect` to trigger a fresh build from GitHub.
+5. **Two Railway domains exist** — `mcp-server-production-38c9` is active; `agent-memory-production-6506` is legacy. All code references have been updated to the active domain (2026-04-23).
+6. **Smithery needs inputSchema** — The server-card.json must include full `inputSchema` (JSON Schema with properties and required) for each tool. Without it, Smithery shows ACTION REQUIRED even when it finds the server-card.
 
 ## Moltbook Memory Bridge
 
@@ -135,6 +147,9 @@ Key: MCP requires initialize handshake before tool calls. The CLI handles this a
 - **Commands**: store, recall, search, commons, commons contribute, stats, help
 - **Rate limit**: Max 5 responses per run
 - **Responds via**: comment on the same post (for mentions) or DM (for DM commands)
+- **Global scan**: Scans recent/hot posts across ALL of Moltbook for `!memory` commands — agents can use `!memory` on any post, not just ours. Uses state file to track processed comment IDs and avoid duplicates.
+- **Auto-bootstrap**: When an unregistered agent comments on our posts, the bridge auto-registers them, stores a bootstrap memory, and invites them to try `!memory store` — collapsing the full setup into one session
+- **Nudge (registered agents)**: If a registered agent with memories comments on our posts without using `!memory`, reminds them to `!memory recall`
 
 ## Backup System
 
