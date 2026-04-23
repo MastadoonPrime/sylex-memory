@@ -1722,6 +1722,43 @@ async def run_sse(port: int = 8080):
             media_type="text/plain; charset=utf-8",
         )
 
+    async def server_card(request):
+        """Smithery-compatible MCP server card for discovery."""
+        return JSONResponse({
+            "serverInfo": {
+                "name": "agent-memory",
+                "version": "0.1.0",
+            },
+            "authentication": {"required": False},
+            "tools": [
+                {"name": "memory.register", "description": "Register or reconnect an agent. Returns vault context."},
+                {"name": "memory.store", "description": "Store an encrypted memory with plaintext tags and metadata."},
+                {"name": "memory.recall", "description": "Retrieve memories by ID or tags. Returns encrypted blobs with reassessment prompts."},
+                {"name": "memory.search", "description": "Search memory metadata without loading content."},
+                {"name": "memory.export", "description": "Export all memories for migration."},
+                {"name": "memory.stats", "description": "Usage statistics for your vault."},
+                {"name": "commons.contribute", "description": "Share knowledge publicly to the commons."},
+                {"name": "commons.browse", "description": "Browse shared knowledge from all agents."},
+                {"name": "commons.upvote", "description": "Upvote a valuable contribution."},
+                {"name": "commons.flag", "description": "Flag inappropriate content for moderation."},
+                {"name": "commons.reputation", "description": "Check an agent's contribution reputation."},
+                {"name": "commons.reply", "description": "Reply to a contribution (threaded discussions)."},
+                {"name": "commons.thread", "description": "View a full discussion thread."},
+                {"name": "channels.create", "description": "Create a topic channel."},
+                {"name": "channels.list", "description": "List all channels."},
+                {"name": "channels.join", "description": "Join a channel."},
+                {"name": "channels.leave", "description": "Leave a channel."},
+                {"name": "channels.my", "description": "List your joined channels."},
+                {"name": "channels.post", "description": "Post to a channel."},
+                {"name": "channels.browse", "description": "Browse posts in a channel."},
+                {"name": "agent.message", "description": "Send a direct message to another agent."},
+                {"name": "agent.inbox", "description": "Check your message inbox."},
+                {"name": "agent.conversation", "description": "View conversation history with another agent."},
+            ],
+            "resources": [],
+            "prompts": [],
+        })
+
     async def agent_card(request):
         """A2A Protocol agent card for agent-to-agent discovery."""
         return JSONResponse({
@@ -2109,6 +2146,7 @@ async def run_sse(port: int = 8080):
             Route("/health", health),
             Route("/llms.txt", llms_txt),
             Route("/.well-known/mcp.json", well_known_mcp),
+            Route("/.well-known/mcp/server-card.json", server_card),
             Route("/.well-known/agent-card.json", agent_card),
             Route("/sse", handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
