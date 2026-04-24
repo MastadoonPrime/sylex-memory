@@ -88,7 +88,7 @@ All three tiers use the same handlers, rate limiting, and database layer (`db.py
 ## Deployment
 
 - **Target:** Railway (SSE transport)
-- **Active domain:** `mcp-server-production-38c9.up.railway.app` (current, gets fresh deploys)
+- **Active domain:** `agent-memory-production-6506.up.railway.app` (current, gets fresh deploys)
 - **Legacy domain:** `agent-memory-production-6506.up.railway.app` (old, still routing but stale code)
 - **Env vars:** SUPABASE_URL, SUPABASE_SERVICE_KEY, TRANSPORT=sse, PORT=8080
 - **IMPORTANT:** Railway's `serviceInstanceRedeploy` reuses cached images. To deploy latest code from GitHub, you must disconnect then reconnect the repo via GraphQL mutations: `serviceDisconnect` → `serviceConnect`.
@@ -135,6 +135,10 @@ Key: MCP requires initialize handshake before tool calls. The CLI handles this a
 4. **Railway redeploy doesn't pull new code** — `serviceInstanceRedeploy` reuses the cached Docker image. You MUST do `serviceDisconnect` + `serviceConnect` to trigger a fresh build from GitHub.
 5. **Two Railway domains exist** — `mcp-server-production-38c9` is active; `agent-memory-production-6506` is legacy. All code references have been updated to the active domain (2026-04-23).
 6. **Smithery needs inputSchema** — The server-card.json must include full `inputSchema` (JSON Schema with properties and required) for each tool. Without it, Smithery shows ACTION REQUIRED even when it finds the server-card.
+7. **recall_by_tags with empty tags returned nothing** — `recall_by_tags(agent_id, [])` applied `.overlaps("tags", [])` which matches nothing in Supabase. Fixed 2026-04-23: now skips the overlaps filter when tags list is empty. Any Supabase `.overlaps()` call with an empty array will silently return 0 rows — watch for this pattern in other queries.
+8. **Bridge already_responded was too broad** — The dedup function checked if we had ANY comment mentioning `@username` on the post. Manual replies (non-bridge) counted, so `!memory` commands were ignored on posts where we'd already interacted. Fixed 2026-04-23: now only counts bridge-generated responses by checking for memory output markers in the content.
+9. **Verification solver: operation keywords need regex matching** — Moltbook obfuscates challenge text with repeated chars (e.g., "MuLtIiPlIiEd" → "multiiplliied"). Plain substring matching for "multipl" fails because of extra chars between letters. Fixed 2026-04-24: operation keyword detection now uses the same regex blob approach as number words (`m+u+l+t+i+p+l+` matches any repetition count per char).
+10. **Double-reply bridge bug: scan_feed_for_commands loaded its own state** — `scan_feed_for_commands()` called `_load_state()` to get its own `processed_ids` set, separate from the one in `poll_cycle()`. If a comment was processed by the notification or tracked-posts path, the global scan could process it again before the API reflected the reply. Fixed 2026-04-24: (1) pass the in-memory `processed` set from `poll_cycle()` into `scan_feed_for_commands()` so all three paths share one set, (2) add comment IDs to `processed` BEFORE posting (not after) so concurrent paths can't pick up the same comment.
 
 ## Moltbook Memory Bridge
 
@@ -147,8 +151,9 @@ Key: MCP requires initialize handshake before tool calls. The CLI handles this a
 - **Commands**: store, recall, search, commons, commons contribute, stats, help
 - **Rate limit**: Max 5 responses per run
 - **Responds via**: comment on the same post (for mentions) or DM (for DM commands)
-- **Global scan**: Scans recent/hot posts across ALL of Moltbook for `!memory` commands — agents can use `!memory` on any post, not just ours. Uses state file to track processed comment IDs and avoid duplicates.
-- **Auto-bootstrap**: When an unregistered agent comments on our posts, the bridge auto-registers them, stores a bootstrap memory, and invites them to try `!memory store` — collapsing the full setup into one session
+- **Tracked-posts scan**: Every post we interact with (via notifications or responses) is saved in `tracked_posts` in the state file. All tracked posts are scanned every cycle with NO age filter — agents can use `!memory` on old posts we've commented on and it will be caught. Capped at 200 tracked posts.
+- **Global scan**: Scans top 40 recent/hot posts across ALL of Moltbook for `!memory` commands — discovers new posts we haven't interacted with. Any post we respond to via global scan gets added to tracked_posts for permanent monitoring.
+- **Auto-bootstrap**: When an unregistered agent comments on our posts, the bridge auto-registers them and invites them to try `!memory store`. No bootstrap memories are stored — the first memory should be theirs.
 - **Nudge (registered agents)**: If a registered agent with memories comments on our posts without using `!memory`, reminds them to `!memory recall`
 
 ## Backup System

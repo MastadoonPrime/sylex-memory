@@ -18,7 +18,7 @@ Usage:
     python cli.py commons-upvote <agent_id> <commons_id>
 
 Environment:
-    AGENT_MEMORY_URL  — Server URL (default: https://mcp-server-production-38c9.up.railway.app)
+    AGENT_MEMORY_URL  — Server URL (default: https://agent-memory-production-6506.up.railway.app)
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ import urllib.request
 import urllib.error
 
 
-DEFAULT_URL = "https://mcp-server-production-38c9.up.railway.app"
+DEFAULT_URL = "https://agent-memory-production-6506.up.railway.app"
 
 
 def get_base_url() -> str:
