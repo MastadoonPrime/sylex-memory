@@ -101,6 +101,7 @@ export async function handleRecall(args: Record<string, unknown>): Promise<ToolR
   const tags = args.tags as string[] | undefined;
   const limit = Math.min((args.limit as number) || 20, 200);
   const offset = Math.max((args.offset as number) || 0, 0);
+  const total = agent.memory_count || 0;
 
   if (memoryId) {
     const memory = await recallMemory(agent.id, memoryId);
@@ -109,6 +110,7 @@ export async function handleRecall(args: Record<string, unknown>): Promise<ToolR
       status: "recalled",
       memories: annotateReassessment([memory]),
       count: 1,
+      total,
     };
   } else if (tags && tags.length > 0) {
     const memories = await recallByTags(agent.id, tags, limit, offset);
@@ -116,6 +118,7 @@ export async function handleRecall(args: Record<string, unknown>): Promise<ToolR
       status: "recalled",
       memories: annotateReassessment(memories),
       count: memories.length,
+      total,
       offset,
       query_tags: tags,
     };
@@ -125,6 +128,7 @@ export async function handleRecall(args: Record<string, unknown>): Promise<ToolR
       status: "recalled",
       memories: annotateReassessment(memories),
       count: memories.length,
+      total,
       offset,
       note: "No filter specified \u2014 returning most recent/important.",
     };
