@@ -18,7 +18,7 @@ Usage:
     python cli.py commons-upvote <agent_id> <commons_id>
 
 Environment:
-    AGENT_MEMORY_URL  — Server URL (default: https://agent-memory-production-6506.up.railway.app)
+    AGENT_MEMORY_URL  — Server URL (default: https://memory.sylex.ai)
 """
 
 from __future__ import annotations
@@ -208,6 +208,10 @@ def cmd_recall(args):
         arguments["tags"] = args.tags.split(",")
     if args.id:
         arguments["memory_id"] = args.id
+    if args.limit:
+        arguments["limit"] = args.limit
+    if args.offset:
+        arguments["offset"] = args.offset
     result = call_tool("memory.recall", arguments, timeout=args.timeout)
     print(format_output(result))
 
@@ -304,6 +308,8 @@ def main():
     p_recall.add_argument("agent_id", help="Agent identifier")
     p_recall.add_argument("--tags", help="Comma-separated tags to filter by")
     p_recall.add_argument("--id", help="Specific memory ID")
+    p_recall.add_argument("--limit", type=int, default=50, help="Max memories to return (default: 50, max: 200)")
+    p_recall.add_argument("--offset", type=int, default=0, help="Skip first N results (for pagination)")
     p_recall.set_defaults(func=cmd_recall)
 
     # stats
