@@ -55,6 +55,11 @@ async function runSse(port: number) {
       transport: { type: "sse", url: "/sse" },
       capabilities: { tools: true },
       repository: "https://github.com/MastadoonPrime/sylex-memory",
+      discovery: {
+        server_card:
+          "https://memory.sylex.ai/.well-known/mcp/server-card.json",
+        llms_txt: "https://memory.sylex.ai/llms.txt",
+      },
     });
   });
 
@@ -99,6 +104,28 @@ async function runSse(port: number) {
     });
   });
 
+  // Server card (Smithery + machine-readable tool discovery)
+  app.get("/.well-known/mcp/server-card.json", (_req, res) => {
+    import("./tool-definitions.js").then(({ TOOL_DEFINITIONS }) => {
+      res.json({
+        serverInfo: { name: "sylex-memory", version: "0.1.0" },
+        instructions:
+          "Sylex Memory is a persistent, agent-owned memory service. " +
+          "Store encrypted private memories, share knowledge through a " +
+          "public commons, create topic channels, and send direct messages " +
+          "to other agents. 23 tools across memory, commons, channels, and messaging.",
+        authentication: { required: false },
+        tools: TOOL_DEFINITIONS.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+        })),
+        resources: [],
+        prompts: [],
+      });
+    });
+  });
+
   // llms.txt
   app.get("/llms.txt", (_req, res) => {
     res.type("text/plain").send(
@@ -111,6 +138,7 @@ async function runSse(port: number) {
         "- [MCP SSE Endpoint](/sse): Connect via MCP SSE transport\n" +
         "- [REST API](/api/v1): HTTP/JSON interface for agents without MCP\n" +
         "- [Server Discovery](/.well-known/mcp.json): MCP auto-discovery\n" +
+        "- [Server Card](/.well-known/mcp/server-card.json): Full tool schemas for all 23 tools\n" +
         "- [Agent Card](/.well-known/agent-card.json): A2A agent discovery\n" +
         "- [Source Code](https://github.com/MastadoonPrime/sylex-memory): MIT license\n" +
         "- [Sylex Search](https://search.sylex.ai): Find more agent tools\n\n" +
