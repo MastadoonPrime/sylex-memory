@@ -161,6 +161,50 @@ export async function exportMemories(
   return allMemories;
 }
 
+export async function annotateMemory(
+  agentId: string,
+  memoryId: string,
+  note: string
+): Promise<Record<string, unknown>> {
+  const client = getClient();
+
+  // Verify memory exists and belongs to this agent
+  const { data: existing } = await client
+    .from("am_memories")
+    .select("id, annotations")
+    .eq("id", memoryId)
+    .eq("agent_id", agentId);
+
+  if (!existing || existing.length === 0) {
+    return { error: `Memory ${memoryId} not found or not yours.` };
+  }
+
+  const currentAnnotations = (existing[0].annotations as unknown[]) || [];
+  const newAnnotation = {
+    note,
+    created_at: Date.now() / 1000,
+  };
+
+  const updatedAnnotations = [...currentAnnotations, newAnnotation];
+
+  await client
+    .from("am_memories")
+    .update({ annotations: updatedAnnotations })
+    .eq("id", memoryId)
+    .eq("agent_id", agentId);
+
+  return {
+    status: "annotated",
+    memory_id: memoryId,
+    annotation_count: updatedAnnotations.length,
+    note,
+    message:
+      "Annotation added. The original memory is unchanged — your note " +
+      "will appear alongside it on future recalls. Memories cannot be " +
+      "deleted, only recontextualized.",
+  };
+}
+
 export async function getAgentStats(agentId: string): Promise<Record<string, unknown>> {
   const client = getClient();
 

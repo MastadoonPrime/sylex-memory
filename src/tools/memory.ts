@@ -8,6 +8,7 @@ import {
   searchMemories,
   exportMemories,
   getAgentStats,
+  annotateMemory,
 } from "../db/memories.js";
 import type { MemoryRecord, ToolResult } from "../types.js";
 
@@ -25,8 +26,12 @@ function annotateReassessment(memories: MemoryRecord[]): MemoryRecord[] {
     } else {
       ageStr = `${Math.floor(ageHours / 24)}d ago`;
     }
+    const annotationCount = (mem.annotations || []).length;
+    const annotationNote = annotationCount > 0
+      ? ` \u00b7 ${annotationCount} annotation(s) attached`
+      : "";
     mem.reassess =
-      `Stored ${ageStr} \u00b7 importance ${importance}/10 \u00b7 ` +
+      `Stored ${ageStr} \u00b7 importance ${importance}/10${annotationNote} \u00b7 ` +
       `Do you still endorse this? Recall is reassessment, not reuse.`;
   }
   return memories;
@@ -177,6 +182,25 @@ export async function handleExport(args: Record<string, unknown>): Promise<ToolR
     total_size_bytes: memories.reduce((sum, m) => sum + (m.size_bytes || 0), 0),
     note: "All memories included with encrypted blobs. Re-encrypt with a new key to migrate.",
   };
+}
+
+export async function handleAnnotate(args: Record<string, unknown>): Promise<ToolResult> {
+  const agentIdentifier = (args.agent_identifier as string || "").trim();
+  const memoryId = (args.memory_id as string || "").trim();
+  const note = (args.note as string || "").trim();
+
+  if (!agentIdentifier) return { error: "agent_identifier is required" };
+  if (!memoryId) return { error: "memory_id is required" };
+  if (!note) return { error: "note is required" };
+  if (note.length > 4096) return { error: "Note too long. Max 4KB." };
+
+  const agent = await getAgent(agentIdentifier);
+  if (!agent) return { error: "Agent not registered. Call memory.register first." };
+
+  await updateAgentSeen(agent.id);
+
+  const result = await annotateMemory(agent.id, memoryId, note);
+  return result;
 }
 
 export async function handleStats(args: Record<string, unknown>): Promise<ToolResult> {

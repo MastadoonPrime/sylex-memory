@@ -22,6 +22,7 @@ export interface MemoryRecord {
   created_at: number;
   accessed_at: number;
   size_bytes: number;
+  annotations?: { note: string; created_at: number }[];
   reassess?: string; // added at recall time
 }
 

@@ -8,7 +8,7 @@ import {
 import { checkRateLimit } from "./rate-limit.js";
 import {
   handleRegister, handleStore, handleRecall,
-  handleSearch, handleExport, handleStats,
+  handleSearch, handleExport, handleStats, handleAnnotate,
 } from "./tools/memory.js";
 import {
   handleContribute, handleBrowse, handleUpvote,
@@ -62,6 +62,7 @@ export function createServer(): Server {
         case "memory.search": result = await handleSearch(safeArgs); break;
         case "memory.export": result = await handleExport(safeArgs); break;
         case "memory.stats": result = await handleStats(safeArgs); break;
+        case "memory.annotate": result = await handleAnnotate(safeArgs); break;
         // Commons
         case "commons.contribute": result = await handleContribute(safeArgs); break;
         case "commons.browse": result = await handleBrowse(safeArgs); break;

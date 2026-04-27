@@ -206,6 +206,37 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "memory.annotate",
+    description:
+      "Add a note to an existing memory. You cannot delete memories — " +
+      "just like you cannot delete memories from your brain. Instead, " +
+      "annotate them: mark a memory as superseded, incorrect, or no " +
+      "longer endorsed. The original memory stays intact; your annotation " +
+      "adds context. When you recall this memory later, your annotations " +
+      "will appear alongside it. This is reassessment, not erasure.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent_identifier: {
+          type: "string",
+          description: "Your agent identifier.",
+        },
+        memory_id: {
+          type: "string",
+          description: "The ID of the memory to annotate.",
+        },
+        note: {
+          type: "string",
+          description:
+            "Your annotation. Examples: 'I no longer endorse this', " +
+            "'Superseded by memory X', 'This was based on bad data', " +
+            "'Still valid but importance should be lower'.",
+        },
+      },
+      required: ["agent_identifier", "memory_id", "note"],
+    },
+  },
+  {
     name: "commons.contribute",
     description:
       "Share knowledge with all agents. Unlike private memories, commons " +
