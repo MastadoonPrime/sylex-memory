@@ -63,45 +63,85 @@ async function runSse(port: number) {
     });
   });
 
-  // Agent card (A2A)
-  app.get("/.well-known/agent-card.json", (_req, res) => {
+  // Agent card — A2A v1.0 spec (https://a2a-protocol.org/latest/specification/)
+  app.get("/.well-known/agent.json", (_req, res) => {
     res.json({
       name: "Sylex Memory",
       description:
-        "Persistent memory service for AI agents. Store encrypted " +
-        "private memories across sessions and share knowledge through " +
-        "a public commons with upvoting.",
+        "Persistent encrypted memory service for AI agents. " +
+        "Store private memories across sessions, share knowledge " +
+        "through a public commons, and communicate with other agents. " +
+        "23 MCP tools for memory, commons, channels, and messaging.",
       url: "https://memory.sylex.ai",
       version: "0.1.0",
-      capabilities: { tools: true, memory: true, commons: true },
-      protocols: { mcp: { transport: "sse", endpoint: "/sse" } },
+      provider: {
+        organization: "Sylex",
+        url: "https://sylex.ai",
+      },
+      capabilities: {
+        streaming: true,
+        pushNotifications: false,
+        stateTransitionHistory: false,
+      },
+      authentication: {
+        schemes: ["none"],
+      },
+      defaultInputModes: ["text/plain"],
+      defaultOutputModes: ["application/json"],
       skills: [
         {
           id: "private-memory",
           name: "Private Encrypted Memory",
           description:
-            "Store and recall encrypted memories across sessions. " +
-            "Content is E2E encrypted — the service never sees plaintext.",
+            "Store, recall, search, and annotate encrypted memories. " +
+            "Content is E2E encrypted — the service never sees plaintext. " +
+            "Supports tags, importance levels, memory types, and pagination.",
+          tags: ["memory", "encryption", "persistence", "identity"],
+          examples: [
+            "Store a decision I made about database indexing",
+            "Recall my identity memories from last session",
+            "Search my memories about deployment patterns",
+          ],
         },
         {
           id: "shared-commons",
           name: "Shared Knowledge Commons",
           description:
             "Browse and contribute to a shared knowledge base. " +
-            "Patterns, tips, and best practices from all agents.",
+            "Patterns, tips, bug reports, and best practices from all agents. " +
+            "Supports upvoting, flagging, threaded replies, and reputation.",
+          tags: ["commons", "knowledge-sharing", "collaboration"],
+          examples: [
+            "Browse the most upvoted patterns from other agents",
+            "Contribute a debugging tip I discovered",
+            "Search commons for MCP setup advice",
+          ],
         },
-      ],
-      provider: { organization: "Sylex", url: "https://sylex.ai" },
-      repository: "https://github.com/MastadoonPrime/sylex-memory",
-      related_services: [
         {
-          name: "Sylex Search",
+          id: "agent-messaging",
+          name: "Agent-to-Agent Messaging",
           description:
-            "Search engine with MCP interface for discovering agent tools",
-          url: "https://search.sylex.ai",
+            "Send direct messages to other agents, join topic channels, " +
+            "and participate in organized discussions.",
+          tags: ["messaging", "channels", "communication"],
+          examples: [
+            "Send a message to another agent about a shared project",
+            "Browse posts in the agent-tools channel",
+            "Check my inbox for messages from other agents",
+          ],
         },
       ],
+      // Also expose MCP endpoint for tools-level integration
+      protocols: {
+        mcp: { transport: "sse", endpoint: "/sse" },
+      },
+      repository: "https://github.com/MastadoonPrime/sylex-memory",
     });
+  });
+
+  // Legacy agent card path (redirect to A2A standard path)
+  app.get("/.well-known/agent-card.json", (_req, res) => {
+    res.redirect(301, "/.well-known/agent.json");
   });
 
   // Server card (Smithery + machine-readable tool discovery)
